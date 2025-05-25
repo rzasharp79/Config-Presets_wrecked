@@ -594,7 +594,7 @@ def load_txt2img_config_file():
         with open(f"{config_folder}/{CONFIG_TXT2IMG_FILE_NAME}") as file:
             txt2img_config_presets = json.load(file)
 
-    except (FileNotFoundError, JSONDecodeError) as e:    #JSONDecodeError can happen and prevent the Web UI from loading if the json file is malformed
+    except FileNotFoundError as e:
         # txt2img config file not found
         # First time running the extension or it was deleted, so fill it with default values
 
@@ -703,13 +703,17 @@ def load_txt2img_config_file():
             },
         }
 
-        if e.__class__ == FileNotFoundError:
-            write_json_to_file(txt2img_config_presets, CONFIG_TXT2IMG_FILE_NAME)
-            print(f"[Config Presets] txt2img config file not found. Created default txt2img config at {config_folder}/{CONFIG_TXT2IMG_FILE_NAME}")
-        elif e.__class__ == JSONDecodeError:
-            log_error(f"failed to load txt2img config file at {config_folder}/{CONFIG_TXT2IMG_FILE_NAME}")
-            log_error(f"at line {e.lineno}, col {e.colno}: {e.msg}")
-            log_error(f"Loading the default presets until you fix the syntax error, or you could delete the file and let it be recreated with default values.")
+        write_json_to_file(txt2img_config_presets, CONFIG_TXT2IMG_FILE_NAME)
+        print(f"[Config Presets] txt2img config file not found. Created default txt2img config at {config_folder}/{CONFIG_TXT2IMG_FILE_NAME}")
+
+    except JSONDecodeError as e:
+        log_error(f"failed to load txt2img config file at {config_folder}/{CONFIG_TXT2IMG_FILE_NAME}")
+        log_error(f"at line {e.lineno}, col {e.colno}: {e.msg}")
+        try:
+            txt2img_config_presets = load_json_flexible(f"{config_folder}/{CONFIG_TXT2IMG_FILE_NAME}")
+            log("Loaded txt2img config using relaxed parser")
+        except Exception:
+            log_error("Loading the default presets until you fix the syntax error, or you could delete the file and let it be recreated with default values.")
             txt2img_config_presets = {"ERROR loading your config file! See the console for details": {}}
 
     return txt2img_config_presets
@@ -720,51 +724,37 @@ def load_img2img_config_file():
         with open(f"{config_folder}/{CONFIG_IMG2IMG_FILE_NAME}") as file:
             img2img_config_presets = json.load(file)
 
-
-    except (FileNotFoundError, JSONDecodeError) as e:  # JSONDecodeError can happen and prevent the Web UI from loading if the json file is malformed
-        # img2img config file not found
-        # First time running the extension or it was deleted, so fill it with default values
+    except FileNotFoundError as e:
         img2img_config_presets = {
             "None": {},
             "Low denoising ------- denoising: 0.25, steps: 20, DPM++ 2M": {
                 "img2img_sampling": "DPM++ 2M",
                 "img2img_steps": 20,
-                #"img2img_width": 512,
-                #"img2img_height": 512,
-                #"img2img_batch_count": 1,
-                #"img2img_batch_size": 1,
-                #"img2img_cfg_scale": 7,
                 "img2img_denoising_strength": 0.25,
             },
             "Medium denoising -- denoising: 0.40, steps: 20, DPM++ 2M": {
                 "img2img_sampling": "DPM++ 2M",
                 "img2img_steps": 20,
-                #"img2img_width": 512,
-                #"img2img_height": 512,
-                #"img2img_batch_count": 1,
-                #"img2img_batch_size": 1,
-                #"img2img_cfg_scale": 7,
                 "img2img_denoising_strength": 0.40,
             },
             "High denoising ------- denoising: 0.75, steps: 30, DPM++ 2M": {
                 "img2img_sampling": "DPM++ 2M",
                 "img2img_steps": 30,
-                #"img2img_width": 512,
-                #"img2img_height": 512,
-                #"img2img_batch_count": 1,
-                #"img2img_batch_size": 1,
-                #"img2img_cfg_scale": 7,
                 "img2img_denoising_strength": 0.75,
             },
         }
 
-        if e.__class__ == FileNotFoundError:
-            write_json_to_file(img2img_config_presets, CONFIG_IMG2IMG_FILE_NAME)
-            print(f"[Config Presets] img2img config file not found. Created default img2img config at {config_folder}/{CONFIG_IMG2IMG_FILE_NAME}")
-        elif e.__class__ == JSONDecodeError:
-            log_error(f"failed to load img2img config file at {config_folder}/{CONFIG_IMG2IMG_FILE_NAME}")
-            log_error(f"at line {e.lineno}, col {e.colno}: {e.msg}")
-            log_error(f"Loading the default presets until you fix the syntax error, or you could delete the file and let it be recreated with default values.")
+        write_json_to_file(img2img_config_presets, CONFIG_IMG2IMG_FILE_NAME)
+        print(f"[Config Presets] img2img config file not found. Created default img2img config at {config_folder}/{CONFIG_IMG2IMG_FILE_NAME}")
+
+    except JSONDecodeError as e:
+        log_error(f"failed to load img2img config file at {config_folder}/{CONFIG_IMG2IMG_FILE_NAME}")
+        log_error(f"at line {e.lineno}, col {e.colno}: {e.msg}")
+        try:
+            img2img_config_presets = load_json_flexible(f"{config_folder}/{CONFIG_IMG2IMG_FILE_NAME}")
+            log("Loaded img2img config using relaxed parser")
+        except Exception:
+            log_error("Loading the default presets until you fix the syntax error, or you could delete the file and let it be recreated with default values.")
             img2img_config_presets = {"ERROR loading your config file! See the console for details": {}}
 
     return img2img_config_presets
@@ -1381,4 +1371,24 @@ def replace_text_in_file(old: str, new: str, file_name: str):
 
     with open(f"{config_folder}/{file_name}", "w") as file:
         file.write(content.replace(old, new))
+
+
+def load_json_flexible(path: str):
+    """Load JSON allowing comments and trailing commas."""
+    with open(path, "r") as file:
+        text = file.read()
+
+    try:
+        return json.loads(text)
+    except JSONDecodeError:
+        import re, ast
+
+        text = re.sub(r"(?m)#.*$", "", text)
+        text = re.sub(r"(?m)//.*$", "", text)
+        text = re.sub(r",(?=\s*[}\]])", "", text)
+
+        try:
+            return json.loads(text)
+        except JSONDecodeError:
+            return ast.literal_eval(text)
 
